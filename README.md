@@ -8,7 +8,8 @@ Use it only on videos you own or are allowed to reuse. YouTube’s terms general
 
 - Python 3.12+
 - [ffmpeg](https://ffmpeg.org/) (`brew install ffmpeg`)
-- Node.js (yt-dlp uses it as a JavaScript runtime for YouTube)
+- A JS runtime for yt-dlp YouTube challenges: **Deno ≥ 2.3** (recommended) or **Node.js ≥ 22**
+  - Node 20 and older are rejected (`JS runtimes: node-… (unsupported)` → only storyboard images)
 
 ## Setup
 

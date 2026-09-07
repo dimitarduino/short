@@ -35,26 +35,26 @@ def _cookies_path() -> Path | None:
 
 def _ydl_opts(**extra) -> dict:
     # YouTube bot / SABR / cookie interactions change often.
-    # Avoid `tv` / `tv_downgraded` — with cookies they often return
-    # "The page needs to be reloaded." Prefer android + web_embedded.
+    # Never use the keyword "default" with cookies: yt-dlp expands it to
+    # _DEFAULT_AUTHED_CLIENTS which includes tv_downgraded → "page needs to be reloaded".
+    # Never pass tv / tv_downgraded / tv_simply.
     cookies = _cookies_path()
     if cookies:
-        clients = ["default", "web_embedded", "web_safari", "android"]
+        clients = ["web_embedded", "web", "web_safari"]
     else:
-        clients = ["android", "default", "web_embedded", "web_safari"]
+        clients = ["android", "web_embedded", "web", "web_safari"]
 
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "noplaylist": True,
-        "js_runtimes": {"node": {}},
+        # Deno preferred (enabled by default in yt-dlp). Node needs >=22.
+        "js_runtimes": {"deno": {}, "node": {}},
         "remote_components": ["ejs:github"],
         "extractor_args": {
             "youtube": {
                 "player_client": clients,
-                # Never use the broken TV downgraded client when logged in.
-                "player_skip": ["webpage"],
             }
         },
     }
@@ -89,6 +89,12 @@ def _clean_yt_error(exc: Exception) -> str:
             "update yt-dlp (`pip install -U yt-dlp`), and restart. "
             "Or temporarily remove the cookies file and retry."
         )
+    if "only images" in low or "format is not available" in low:
+        return (
+            "YouTube formats missing — JS challenge solver failed. "
+            "Install Deno ≥2.3 (or Node ≥22), put it on PATH for the service user, "
+            "run `pip install -U 'yt-dlp[default]'`, then restart."
+        )
     return message or "YouTube request failed."
 
 
@@ -98,14 +104,14 @@ def _extract_info(url: str, *, download: bool = False) -> dict[str, Any]:
         {},
         {
             "extractor_args": {
-                "youtube": {"player_client": ["android", "web_embedded"]}
+                "youtube": {"player_client": ["web_embedded", "web"]}
             }
         },
         {
             # Last resort: no cookies (cookies + some clients = reload loop)
             "cookiefile": None,
             "extractor_args": {
-                "youtube": {"player_client": ["android", "default", "web_embedded"]}
+                "youtube": {"player_client": ["android", "web_embedded", "web"]}
             },
         },
     ]
@@ -211,7 +217,7 @@ def download_section(url: str, window: ClipWindow, dest: Path, progress_cb=None)
         fallback = dict(opts)
         fallback.pop("cookiefile", None)
         fallback["extractor_args"] = {
-            "youtube": {"player_client": ["android", "default", "web_embedded"]}
+            "youtube": {"player_client": ["android", "web_embedded", "web"]}
         }
         try:
             with YoutubeDL(fallback) as ydl:
