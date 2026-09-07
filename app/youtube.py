@@ -40,17 +40,20 @@ def _ydl_opts(**extra) -> dict:
     # Never pass tv / tv_downgraded / tv_simply.
     cookies = _cookies_path()
     if cookies:
-        clients = ["web_embedded", "web", "web_safari"]
+        # Prefer clients that still return classic HTTPS URLs.
+        # web/web_safari often go SABR-only (storyboards only) on VPS + Premium cookies.
+        # Never use "default" (pulls tv_downgraded) or tv*.
+        clients = ["web_creator", "web_embedded", "web", "web_safari"]
     else:
-        clients = ["android", "web_embedded", "web", "web_safari"]
+        clients = ["android", "web_creator", "web_embedded", "web"]
 
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "noplaylist": True,
-        # Deno preferred (enabled by default in yt-dlp). Node needs >=22.
-        "js_runtimes": {"deno": {}, "node": {}},
+        # Deno preferred; pass absolute path (systemd often lacks /usr/local/bin).
+        "js_runtimes": _js_runtimes_opt(),
         "remote_components": ["ejs:github"],
         "extractor_args": {
             "youtube": {
@@ -104,14 +107,19 @@ def _extract_info(url: str, *, download: bool = False) -> dict[str, Any]:
         {},
         {
             "extractor_args": {
-                "youtube": {"player_client": ["web_embedded", "web"]}
+                "youtube": {"player_client": ["web_creator", "web_embedded"]}
+            }
+        },
+        {
+            "extractor_args": {
+                "youtube": {"player_client": ["web_creator"]}
             }
         },
         {
             # Last resort: no cookies (cookies + some clients = reload loop)
             "cookiefile": None,
             "extractor_args": {
-                "youtube": {"player_client": ["android", "web_embedded", "web"]}
+                "youtube": {"player_client": ["android", "web_creator", "web_embedded"]}
             },
         },
     ]
@@ -157,28 +165,57 @@ def _has_real_formats(info: dict[str, Any]) -> bool:
     return False
 
 
-def _require_js_runtime_or_raise() -> None:
-    """Fail fast with a clear message when Deno/Node22 is missing for www-data."""
+def _runtime_bin(name: str) -> str | None:
+    """Resolve deno/node even when systemd PATH omits /usr/local/bin."""
     from shutil import which
 
-    deno = which("deno")
-    node = which("node")
-    node_ok = False
-    if node:
-        import subprocess
+    found = which(name)
+    if found:
+        return found
+    for candidate in (
+        Path("/usr/local/bin") / name,
+        Path("/usr/bin") / name,
+        Path.home() / ".deno" / "bin" / name,
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
+
+def _js_runtimes_opt() -> dict[str, Any]:
+    runtimes: dict[str, Any] = {}
+    deno = _runtime_bin("deno")
+    if deno:
+        runtimes["deno"] = {"path": deno}
+    node = _runtime_bin("node")
+    if node:
+        runtimes["node"] = {"path": node}
+    # Always declare keys so yt-dlp knows to look; path may be empty.
+    if not runtimes:
+        runtimes = {"deno": {}, "node": {}}
+    return runtimes
+
+
+def _require_js_runtime_or_raise() -> None:
+    """Fail fast when Deno/Node22 is missing for the service user."""
+    import subprocess
+
+    deno = _runtime_bin("deno")
+    if deno:
+        return
+    node = _runtime_bin("node")
+    if node:
         try:
             out = subprocess.check_output([node, "--version"], text=True, timeout=5).strip()
-            # v22.x.x
             m = re.match(r"v(\d+)", out)
-            node_ok = bool(m and int(m.group(1)) >= 22)
+            if m and int(m.group(1)) >= 22:
+                return
         except Exception:
-            node_ok = False
-    if deno or node_ok:
-        return
+            pass
     raise YoutubeError(
-        "YouTube downloads need Deno ≥2.3 or Node ≥22 on PATH for the service user "
-        "(Node 20 is not enough). Install Deno to /usr/local/bin/deno, then "
+        "YouTube downloads need Deno ≥2.3 or Node ≥22 "
+        "(Node 20 is not enough). Install Deno to /usr/local/bin/deno, "
+        "ensure the systemd unit PATH includes /usr/local/bin, then "
         "`pip install -U 'yt-dlp[default]'` and restart shorts-gen."
     )
 
@@ -209,10 +246,10 @@ def fetch_metadata(url: str) -> dict[str, Any]:
 
     if not _has_real_formats(info):
         raise YoutubeError(
-            "YouTube returned no playable formats (only storyboards). "
-            "Install Deno ≥2.3 to /usr/local/bin/deno (or Node ≥22), ensure "
-            "`sudo -u www-data which deno` works, run "
-            "`pip install -U 'yt-dlp[default]'`, restart shorts-gen."
+            "YouTube returned no playable formats (SABR/storyboards only). "
+            "On the VPS try: (1) cookies from a throwaway account without Premium, "
+            "(2) `yt-dlp --extractor-args 'youtube:player_client=web_creator'`, "
+            "or (3) Cloudflare WARP / a residential proxy — datacenter IPs often get SABR-only."
         )
 
     heatmap = normalize_heatmap(info.get("heatmap"))
