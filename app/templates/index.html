@@ -692,10 +692,18 @@
     function renderHeatmap(job) {
       const points = job.heatmap || [];
       videoDuration = job.duration || (points.length ? points[points.length - 1].end : 1);
-      barsEl.innerHTML = points.map((p) => {
-        const h = Math.max(4, Math.round((p.value || 0) * 100));
-        return `<div class="flex-1 bg-paper/70" style="height:${h}%"></div>`;
-      }).join("");
+      if (points.length) {
+        barsEl.innerHTML = points.map((p) => {
+          const h = Math.max(4, Math.round((p.value || 0) * 100));
+          return `<div class="flex-1 bg-paper/70" style="height:${h}%"></div>`;
+        }).join("");
+      } else {
+        // Flat timeline so the user can still drag a clip without Most replayed data.
+        const n = 48;
+        barsEl.innerHTML = Array.from({ length: n }, () =>
+          `<div class="flex-1 bg-paper/20" style="height:18%"></div>`
+        ).join("");
+      }
 
       if (job.clip_start != null) clipStart = job.clip_start;
       if (job.clip_end != null) clipEnd = job.clip_end;
@@ -704,6 +712,10 @@
 
       const picking = job.status === "ready";
       clipControls.classList.toggle("hidden", !picking);
+      const usePeakBtn = document.getElementById("usePeak");
+      if (usePeakBtn) {
+        usePeakBtn.textContent = points.length ? "Use peak" : "Reset window";
+      }
       updateClipUI();
     }
 
@@ -897,6 +909,8 @@
       if (job.warning) {
         warningEl.textContent = job.warning;
         warningEl.classList.remove("hidden");
+      } else {
+        warningEl.classList.add("hidden");
       }
       if (job.status === "ready") {
         submit.disabled = false;

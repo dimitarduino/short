@@ -173,6 +173,7 @@ class JobStore:
                 )
                 self._set(job_id, status="picking", progress="Finding peak window…")
                 window = pick_peak_window(meta["heatmap"], meta["duration"])
+                has_heat = bool(meta["heatmap"])
                 # Prefetch captions into cache so generate is less likely to hit 429.
                 try:
                     langs = pick_caption_langs(
@@ -194,6 +195,11 @@ class JobStore:
                     suggested_start=window.start,
                     suggested_end=window.end,
                     progress=None,
+                    warning=(
+                        None
+                        if has_heat
+                        else "No Most replayed data from YouTube — drag to pick any 15–60s clip."
+                    ),
                 )
             except (YoutubeError, NoHeatmapError) as exc:
                 self._set(job_id, status="error", error=str(exc), progress=None)

@@ -25,7 +25,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000), paste a watch URL, and generate. The video must already have a Most replayed heatmap (newer or rarely watched videos will fail on purpose).
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), paste a watch URL, and generate. If YouTube has a Most replayed heatmap it is suggested automatically; otherwise you drag any 15–60s window yourself.
 
 Jobs write files under `data/jobs/` (gitignored). Only one short generates at a time.
 

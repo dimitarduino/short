@@ -48,12 +48,27 @@ def normalize_heatmap(raw: list | None) -> list[HeatPoint]:
     return points
 
 
+def default_clip_window(video_duration: float) -> ClipWindow:
+    """When YouTube has no Most replayed data, start with an early ~30s window."""
+    duration = float(video_duration or 0)
+    if duration <= 0:
+        raise NoHeatmapError("Could not read video duration.")
+    length = min(PREFERRED_MAX, max(MIN_DURATION, min(30.0, duration)))
+    # Skip a short intro when the video is long enough.
+    start = 0.0
+    if duration > length + 20:
+        start = min(15.0, duration * 0.08)
+    end = start + length
+    if end > duration:
+        end = duration
+        start = max(0.0, end - length)
+    return ClipWindow(start=_snap(start), end=_snap(end))
+
+
 def pick_peak_window(raw_heatmap: list | None, video_duration: float) -> ClipWindow:
     points = normalize_heatmap(raw_heatmap)
     if not points:
-        raise NoHeatmapError(
-            "This video has no Most replayed heatmap yet. Try a more popular video."
-        )
+        return default_clip_window(video_duration)
 
     duration = max(float(video_duration or 0), points[-1].end)
     if duration <= 0:

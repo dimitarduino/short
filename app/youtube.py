@@ -253,6 +253,9 @@ def fetch_metadata(url: str) -> dict[str, Any]:
         )
 
     heatmap = normalize_heatmap(info.get("heatmap"))
+    if not heatmap:
+        heatmap = _try_fetch_heatmap(url)
+
     return {
         "id": info.get("id"),
         "title": info.get("title") or "Untitled",
@@ -262,6 +265,25 @@ def fetch_metadata(url: str) -> dict[str, Any]:
         "subtitles": info.get("subtitles") or {},
         "automatic_captions": info.get("automatic_captions") or {},
     }
+
+
+def _try_fetch_heatmap(url: str) -> list[HeatPoint]:
+    """web_creator often omits Most replayed; retry with web clients for heatmap only."""
+    for clients in (["web"], ["web_embedded"], ["mweb"]):
+        try:
+            opts = _ydl_opts(
+                skip_download=True,
+                ignore_no_formats_error=True,
+                extractor_args={"youtube": {"player_client": clients}},
+            )
+            with YoutubeDL(opts) as ydl:
+                extra = ydl.extract_info(url, download=False)
+            points = normalize_heatmap((extra or {}).get("heatmap"))
+            if points:
+                return points
+        except Exception:
+            continue
+    return []
 
 
 def heatmap_payload(points: list[HeatPoint]) -> list[dict[str, float]]:
