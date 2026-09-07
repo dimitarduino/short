@@ -34,41 +34,102 @@ def _cookies_path() -> Path | None:
 
 
 def _ydl_opts(**extra) -> dict:
-    # Datacenter IPs often get "Sign in to confirm you’re not a bot".
-    # Prefer non-web player clients first; cookies help when YouTube still challenges.
+    # YouTube bot / SABR / cookie interactions change often.
+    # Avoid `tv` / `tv_downgraded` — with cookies they often return
+    # "The page needs to be reloaded." Prefer android + web_embedded.
+    cookies = _cookies_path()
+    if cookies:
+        clients = ["default", "web_embedded", "web_safari", "android"]
+    else:
+        clients = ["android", "default", "web_embedded", "web_safari"]
+
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "noplaylist": True,
         "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
         "extractor_args": {
             "youtube": {
-                # Avoid plain "web" client which triggers PO-token / bot checks on VPS IPs.
-                "player_client": ["tv", "web_safari", "android"],
+                "player_client": clients,
+                # Never use the broken TV downgraded client when logged in.
+                "player_skip": ["webpage"],
             }
         },
     }
-    cookies = _cookies_path()
     if cookies:
         opts["cookiefile"] = str(cookies)
     opts.update(extra)
-    # Keep cookies if caller overwrote opts without them
     if cookies and "cookiefile" not in opts:
         opts["cookiefile"] = str(cookies)
+    # Merge extractor_args if caller passed partial ones
+    if "extractor_args" in extra:
+        base = {"youtube": {"player_client": clients}}
+        merged = dict(base)
+        for k, v in (extra.get("extractor_args") or {}).items():
+            merged[k] = {**(merged.get(k) or {}), **(v or {})}
+        opts["extractor_args"] = merged
     return opts
 
 
 def _clean_yt_error(exc: Exception) -> str:
     message = re.sub(r"^ERROR:\s*", "", str(exc)).strip()
-    if "Sign in to confirm" in message or "not a bot" in message.lower():
+    low = message.lower()
+    if "sign in to confirm" in low or "not a bot" in low:
         return (
             "YouTube blocked this server IP (bot check). "
-            "Export cookies from a browser (throwaway Google account), put them at "
-            "data/youtube_cookies.txt on the VPS, set YOUTUBE_COOKIES_FILE if needed, "
-            "then restart shorts-gen. Prefer a secondary account — not your main Google login."
+            "Put Netscape cookies from a throwaway Google account at "
+            "data/youtube_cookies.txt, then restart. Do not use your main account."
+        )
+    if "page needs to be reloaded" in low:
+        return (
+            "YouTube rejected the player session (often bad cookies + TV client). "
+            "Re-export fresh youtube.com cookies, replace data/youtube_cookies.txt, "
+            "update yt-dlp (`pip install -U yt-dlp`), and restart. "
+            "Or temporarily remove the cookies file and retry."
         )
     return message or "YouTube request failed."
+
+
+def _extract_info(url: str, *, download: bool = False) -> dict[str, Any]:
+    """Extract with fallbacks when YouTube returns bot / reload errors."""
+    attempts: list[dict[str, Any]] = [
+        {},
+        {
+            "extractor_args": {
+                "youtube": {"player_client": ["android", "web_embedded"]}
+            }
+        },
+        {
+            # Last resort: no cookies (cookies + some clients = reload loop)
+            "cookiefile": None,
+            "extractor_args": {
+                "youtube": {"player_client": ["android", "default", "web_embedded"]}
+            },
+        },
+    ]
+    last_exc: Exception | None = None
+    for override in attempts:
+        opts = _ydl_opts(**{k: v for k, v in override.items() if v is not None})
+        if override.get("cookiefile") is None and "cookiefile" in override:
+            opts.pop("cookiefile", None)
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+            if info:
+                return info
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc).lower()
+            if not any(
+                s in msg
+                for s in ("not a bot", "page needs to be reloaded", "sign in")
+            ):
+                break
+            continue
+    assert last_exc is not None
+    raise last_exc
 
 
 def parse_video_id(url: str) -> str:
@@ -84,10 +145,8 @@ def parse_video_id(url: str) -> str:
 
 
 def fetch_metadata(url: str) -> dict[str, Any]:
-    opts = _ydl_opts(skip_download=True, extract_flat=False)
     try:
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = _extract_info(url, download=False)
     except Exception as exc:  # yt-dlp raises many extractor errors
         raise YoutubeError(f"Could not read that video: {_clean_yt_error(exc)}") from exc
 
@@ -147,8 +206,18 @@ def download_section(url: str, window: ClipWindow, dest: Path, progress_cb=None)
     try:
         with YoutubeDL(opts) as ydl:
             ydl.download([url])
-    except Exception as exc:
-        raise YoutubeError(f"Download failed: {_clean_yt_error(exc)}") from exc
+    except Exception as first:
+        # Retry without cookies + android-first (cookies often cause reload errors on VPS)
+        fallback = dict(opts)
+        fallback.pop("cookiefile", None)
+        fallback["extractor_args"] = {
+            "youtube": {"player_client": ["android", "default", "web_embedded"]}
+        }
+        try:
+            with YoutubeDL(fallback) as ydl:
+                ydl.download([url])
+        except Exception:
+            raise YoutubeError(f"Download failed: {_clean_yt_error(first)}") from first
 
     if output.exists():
         return output
