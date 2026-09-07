@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -20,20 +21,53 @@ class YoutubeError(RuntimeError):
     pass
 
 
+def _cookies_path() -> Path | None:
+    raw = (os.getenv("YOUTUBE_COOKIES_FILE") or "").strip()
+    if not raw:
+        # Sensible default on the VPS / local if the file exists
+        candidate = ROOT / "data" / "youtube_cookies.txt"
+        return candidate if candidate.exists() else None
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path if path.exists() else None
+
+
 def _ydl_opts(**extra) -> dict:
-    opts = {
+    # Datacenter IPs often get "Sign in to confirm you’re not a bot".
+    # Prefer non-web player clients first; cookies help when YouTube still challenges.
+    opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "noplaylist": True,
         "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {
+                # Avoid plain "web" client which triggers PO-token / bot checks on VPS IPs.
+                "player_client": ["tv", "web_safari", "android"],
+            }
+        },
     }
+    cookies = _cookies_path()
+    if cookies:
+        opts["cookiefile"] = str(cookies)
     opts.update(extra)
+    # Keep cookies if caller overwrote opts without them
+    if cookies and "cookiefile" not in opts:
+        opts["cookiefile"] = str(cookies)
     return opts
 
 
 def _clean_yt_error(exc: Exception) -> str:
     message = re.sub(r"^ERROR:\s*", "", str(exc)).strip()
+    if "Sign in to confirm" in message or "not a bot" in message.lower():
+        return (
+            "YouTube blocked this server IP (bot check). "
+            "Export cookies from a browser (throwaway Google account), put them at "
+            "data/youtube_cookies.txt on the VPS, set YOUTUBE_COOKIES_FILE if needed, "
+            "then restart shorts-gen. Prefer a secondary account — not your main Google login."
+        )
     return message or "YouTube request failed."
 
 
