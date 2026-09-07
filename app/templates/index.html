@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heatmap Shorts</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["IBM Plex Sans", "ui-sans-serif", "system-ui"],
+            mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
+          },
+          colors: {
+            ink: "#12110e",
+            paper: "#f3efe4",
+            acid: "#e8ff47",
+            ember: "#ff5a1f",
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-ink text-paper min-h-screen font-sans antialiased">
+  <div class="mx-auto max-w-5xl px-6 py-10">
+    <header class="flex items-end justify-between gap-6 border-b border-paper/15 pb-6">
+      <div>
+        <p class="font-mono text-xs uppercase tracking-[0.25em] text-acid">Local · 9:16</p>
+        <h1 class="mt-2 text-4xl font-semibold tracking-tight">Heatmap Shorts</h1>
+        <p class="mt-2 max-w-xl text-paper/70">Paste a YouTube link. We cut the most replayed stretch, crop it vertical, and burn in captions.</p>
+      </div>
+      <p class="hidden font-mono text-xs text-paper/40 sm:block">localhost only</p>
+    </header>
+
+    <section id="connections" class="mt-8 border border-paper/15 p-5">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p class="font-mono text-xs uppercase tracking-[0.25em] text-acid">Connections</p>
+          <p class="mt-1 text-sm text-paper/60">Connect accounts with OAuth before pasting a link. Scheduled posts upload via each platform’s API.</p>
+        </div>
+        <p id="connBanner" class="font-mono text-[11px] text-paper/40"></p>
+      </div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-3">
+        <div class="border border-paper/15 p-4" data-platform="youtube">
+          <p class="text-sm font-medium">YouTube</p>
+          <p class="mt-1 font-mono text-[11px] text-paper/40">OAuth · private upload → publish later</p>
+          <p id="ytStatus" class="mt-3 font-mono text-xs text-paper/50">Checking…</p>
+          <a id="ytConnectTop" href="/auth/youtube" class="mt-3 inline-block bg-acid px-3 py-2 text-xs font-semibold text-ink hover:bg-white">Connect YouTube</a>
+          <button id="ytDisconnect" type="button" class="mt-3 hidden border border-paper/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
+        </div>
+        <div class="border border-paper/15 p-4" data-platform="x">
+          <p class="text-sm font-medium">X</p>
+          <p class="mt-1 font-mono text-[11px] text-paper/40">OAuth · video post via X API</p>
+          <p id="xStatus" class="mt-3 font-mono text-xs text-paper/50">Checking…</p>
+          <a id="xConnect" href="/auth/x" class="mt-3 inline-block bg-paper px-3 py-2 text-xs font-semibold text-ink hover:bg-acid">Connect X</a>
+          <button id="xDisconnect" type="button" class="mt-3 hidden border border-paper/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
+        </div>
+        <div class="border border-paper/15 p-4" data-platform="tiktok">
+          <p class="text-sm font-medium">TikTok</p>
+          <p class="mt-1 font-mono text-[11px] text-paper/40">OAuth · Content Posting API</p>
+          <p id="ttStatus" class="mt-3 font-mono text-xs text-paper/50">Checking…</p>
+          <div id="ttProfile" class="mt-2 hidden items-center gap-2"></div>
+          <button id="ttConnect" type="button" class="mt-3 bg-paper px-3 py-2 text-xs font-semibold text-ink hover:bg-acid">Connect TikTok</button>
+          <button id="ttDisconnect" type="button" class="mt-3 hidden border border-paper/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="library" class="mt-10">
+      <div class="flex items-end justify-between gap-3">
+        <div>
+          <p class="font-mono text-xs uppercase tracking-[0.25em] text-acid">Library</p>
+          <p class="mt-1 text-sm text-paper/60">Previously generated shorts with titles, captions, and metadata.</p>
+        </div>
+        <button id="libraryRefresh" type="button" class="border border-paper/20 px-3 py-1 font-mono text-xs uppercase tracking-wider hover:border-acid">Refresh</button>
+      </div>
+      <ul id="libraryList" class="mt-4 grid gap-3 sm:grid-cols-2"></ul>
+    </section>
+
+    <form id="form" class="mt-8 flex flex-col gap-3 sm:flex-row">
+      <input
+        id="url"
+        name="url"
+        type="url"
+        required
+        placeholder="https://www.youtube.com/watch?v=…"
+        class="w-full rounded-none border border-paper/20 bg-transparent px-4 py-3 font-mono text-sm outline-none ring-acid placeholder:text-paper/30 focus:border-acid"
+      />
+      <button
+        id="submit"
+        type="submit"
+        class="shrink-0 bg-acid px-6 py-3 font-semibold text-ink hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Generate
+      </button>
+    </form>
+    <p id="formError" class="mt-3 hidden font-mono text-sm text-ember"></p>
+
+    <div id="work" class="mt-12 hidden grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <section>
+        <ol id="steps" class="grid grid-cols-2 gap-2 font-mono text-xs uppercase tracking-wider sm:grid-cols-5"></ol>
+        <div class="mt-8">
+          <div class="flex items-baseline justify-between gap-4">
+            <h2 id="title" class="text-xl font-medium"></h2>
+            <p id="range" class="font-mono text-sm text-acid"></p>
+          </div>
+          <div id="heatmapWrap" class="relative mt-4 h-24 overflow-hidden border border-paper/15 bg-black select-none touch-none">
+            <div id="bars" class="absolute inset-0 flex items-end gap-px px-1 pointer-events-none"></div>
+            <div id="window" class="absolute top-0 hidden h-full border-x-2 border-acid bg-acid/20 cursor-grab"></div>
+            <div id="handleL" class="absolute top-0 hidden z-10 h-full w-3 -translate-x-1/2 cursor-ew-resize bg-acid"></div>
+            <div id="handleR" class="absolute top-0 hidden z-10 h-full w-3 -translate-x-1/2 cursor-ew-resize bg-acid"></div>
+          </div>
+          <p class="mt-2 font-mono text-[11px] uppercase tracking-widest text-paper/40">Drag handles to choose the clip · 15–60s</p>
+          <div id="clipControls" class="mt-3 hidden flex flex-wrap items-end gap-3">
+            <label class="font-mono text-[11px] text-paper/50">Start
+              <input id="clipStartIn" type="number" min="0" step="0.1" class="mt-1 block w-24 border border-paper/20 bg-transparent px-2 py-1 font-mono text-sm" />
+            </label>
+            <label class="font-mono text-[11px] text-paper/50">End
+              <input id="clipEndIn" type="number" min="0" step="0.1" class="mt-1 block w-24 border border-paper/20 bg-transparent px-2 py-1 font-mono text-sm" />
+            </label>
+            <button id="usePeak" type="button" class="border border-paper/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-acid">Use peak</button>
+            <button id="generateBtn" type="button" class="bg-acid px-4 py-2 text-sm font-semibold text-ink hover:bg-white">Generate this clip</button>
+          </div>
+        </div>
+        <p id="progress" class="mt-4 hidden font-mono text-sm text-paper/60"></p>
+        <p id="warning" class="mt-4 hidden font-mono text-sm text-acid/80"></p>
+        <p id="jobError" class="mt-4 hidden font-mono text-sm text-ember"></p>
+      </section>
+
+      <aside class="flex flex-col items-center">
+        <div class="w-[220px] rounded-[28px] border border-paper/20 bg-black p-2 shadow-[0_0_0_1px_rgba(243,239,228,0.06)]">
+          <div class="overflow-hidden rounded-[20px] bg-[#0a0a08]">
+            <video id="player" class="aspect-[9/16] w-full bg-black" controls playsinline></video>
+          </div>
+        </div>
+        <a
+          id="download"
+          class="mt-4 hidden bg-paper px-5 py-2 text-sm font-semibold text-ink hover:bg-acid"
+          download
+        >Download MP4</a>
+        <p id="previewHint" class="mt-3 font-mono text-[11px] uppercase tracking-widest text-paper/40">Preview appears when ready</p>
+      </aside>
+    </div>
+
+    <section id="publish" class="mt-14 hidden border-t border-paper/15 pt-10">
+      <p class="font-mono text-xs uppercase tracking-[0.25em] text-acid">Finish</p>
+      <h2 class="mt-2 text-2xl font-semibold">Music, copy, schedule</h2>
+      <p class="mt-2 max-w-2xl text-paper/60">Pick a mood bed under the talking. Music stays soft (~0.13) under speech. Posts are queued, not published now.</p>
+
+      <div class="mt-8">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-paper/40">Background</h3>
+        <div id="tracks" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
+        <p id="musicStatus" class="mt-2 hidden font-mono text-sm text-paper/50"></p>
+        <audio id="musicPreview" class="hidden"></audio>
+      </div>
+
+      <div class="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div>
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-mono text-xs uppercase tracking-widest text-paper/40">AI copy</h3>
+            <button id="regenMeta" type="button" class="border border-paper/20 px-3 py-1 font-mono text-xs uppercase tracking-wider hover:border-acid">Regenerate</button>
+            <span id="metaSource" class="font-mono text-[11px] text-paper/35"></span>
+          </div>
+          <label class="mt-4 block font-mono text-[11px] uppercase tracking-widest text-paper/40">Title</label>
+          <input id="metaTitle" class="mt-1 w-full border border-paper/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-acid" />
+          <label class="mt-4 block font-mono text-[11px] uppercase tracking-widest text-paper/40">Description</label>
+          <textarea id="metaDesc" rows="5" class="mt-1 w-full border border-paper/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-acid"></textarea>
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="block font-mono text-[11px] uppercase tracking-widest text-paper/40">Tags</label>
+              <input id="metaTags" class="mt-1 w-full border border-paper/20 bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-acid" />
+            </div>
+            <div>
+              <label class="block font-mono text-[11px] uppercase tracking-widest text-paper/40">YouTube category</label>
+              <select id="metaCat" class="mt-1 w-full border border-paper/20 bg-ink px-3 py-2 text-sm outline-none focus:border-acid"></select>
+            </div>
+          </div>
+          <label class="mt-4 block font-mono text-[11px] uppercase tracking-widest text-paper/40">X text</label>
+          <textarea id="metaX" rows="2" class="mt-1 w-full border border-paper/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-acid"></textarea>
+          <label class="mt-4 block font-mono text-[11px] uppercase tracking-widest text-paper/40">TikTok caption</label>
+          <textarea id="metaTt" rows="2" class="mt-1 w-full border border-paper/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-acid"></textarea>
+        </div>
+
+        <div>
+          <h3 class="font-mono text-xs uppercase tracking-widest text-paper/40">Go live</h3>
+          <div id="cal" class="mt-3 border border-paper/20 p-4">
+            <div class="flex items-center justify-between">
+              <button id="calPrev" type="button" class="px-2 text-lg leading-none text-paper/60 hover:text-acid">‹</button>
+              <p id="calLabel" class="font-mono text-xs uppercase tracking-widest"></p>
+              <button id="calNext" type="button" class="px-2 text-lg leading-none text-paper/60 hover:text-acid">›</button>
+            </div>
+            <div class="mt-3 grid grid-cols-7 gap-1 font-mono text-[10px] uppercase tracking-wider text-paper/35">
+              <span class="text-center">Su</span><span class="text-center">Mo</span><span class="text-center">Tu</span>
+              <span class="text-center">We</span><span class="text-center">Th</span><span class="text-center">Fr</span>
+              <span class="text-center">Sa</span>
+            </div>
+            <div id="calDays" class="mt-1 grid grid-cols-7 gap-1"></div>
+            <div class="mt-4 flex items-center gap-2">
+              <input id="calHour" type="number" min="0" max="23" value="12" class="w-16 border border-paper/20 bg-transparent px-2 py-1 font-mono text-sm" />
+              <span class="text-paper/40">:</span>
+              <input id="calMinute" type="number" min="0" max="59" value="0" class="w-16 border border-paper/20 bg-transparent px-2 py-1 font-mono text-sm" />
+            </div>
+            <p id="calSummary" class="mt-3 font-mono text-xs text-acid"></p>
+          </div>
+
+          <div class="mt-4 space-y-2 font-mono text-sm">
+            <label class="flex items-center gap-2"><input id="platYt" type="checkbox" checked class="accent-acid" /> YouTube</label>
+            <label class="flex items-center gap-2"><input id="platX" type="checkbox" class="accent-acid" /> X</label>
+            <label class="flex items-center gap-2"><input id="platTt" type="checkbox" class="accent-acid" /> TikTok</label>
+          </div>
+          <p id="connHint" class="mt-2 font-mono text-[11px] text-paper/40"></p>
+          <p class="mt-2 font-mono text-[10px] text-paper/35">YouTube uses the calendar time. TikTok inbox uploads immediately (open the TikTok app for the draft). X posts at the scheduled time.</p>
+          <button id="scheduleBtn" type="button" class="mt-5 w-full bg-acid py-3 font-semibold text-ink hover:bg-white disabled:opacity-40">Schedule via API</button>
+          <p id="scheduleMsg" class="mt-3 hidden font-mono text-sm"></p>
+        </div>
+      </div>
+
+      <div class="mt-12">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-paper/40">Queued</h3>
+        <ul id="queue" class="mt-3 space-y-2 font-mono text-sm text-paper/70"></ul>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const STEPS = [
+      ["analyzing", "Analyze"],
+      ["ready", "Pick clip"],
+      ["downloading", "Download"],
+      ["captions", "Captions"],
+      ["rendering", "Render"],
+    ];
+    const form = document.getElementById("form");
+    const urlInput = document.getElementById("url");
+    const submit = document.getElementById("submit");
+    const formError = document.getElementById("formError");
+    const work = document.getElementById("work");
+    const stepsEl = document.getElementById("steps");
+    const titleEl = document.getElementById("title");
+    const rangeEl = document.getElementById("range");
+    const barsEl = document.getElementById("bars");
+    const windowEl = document.getElementById("window");
+    const warningEl = document.getElementById("warning");
+    const progressEl = document.getElementById("progress");
+    const jobError = document.getElementById("jobError");
+    const player = document.getElementById("player");
+    const download = document.getElementById("download");
+    const previewHint = document.getElementById("previewHint");
+
+    const publish = document.getElementById("publish");
+    const tracksEl = document.getElementById("tracks");
+    const musicStatus = document.getElementById("musicStatus");
+    const musicPreview = document.getElementById("musicPreview");
+    const regenMeta = document.getElementById("regenMeta");
+    const metaSource = document.getElementById("metaSource");
+    const metaTitle = document.getElementById("metaTitle");
+    const metaDesc = document.getElementById("metaDesc");
+    const metaTags = document.getElementById("metaTags");
+    const metaCat = document.getElementById("metaCat");
+    const metaX = document.getElementById("metaX");
+    const metaTt = document.getElementById("metaTt");
+    const calPrev = document.getElementById("calPrev");
+    const calNext = document.getElementById("calNext");
+    const calLabel = document.getElementById("calLabel");
+    const calDays = document.getElementById("calDays");
+    const calHour = document.getElementById("calHour");
+    const calMinute = document.getElementById("calMinute");
+    const calSummary = document.getElementById("calSummary");
+    const scheduleBtn = document.getElementById("scheduleBtn");
+    const scheduleMsg = document.getElementById("scheduleMsg");
+    const connHint = document.getElementById("connHint");
+    const queueEl = document.getElementById("queue");
+    const ytStatus = document.getElementById("ytStatus");
+    const xStatus = document.getElementById("xStatus");
+    const ttStatus = document.getElementById("ttStatus");
+    const ytConnectTop = document.getElementById("ytConnectTop");
+    const ytDisconnect = document.getElementById("ytDisconnect");
+    const xConnect = document.getElementById("xConnect");
+    const ttConnect = document.getElementById("ttConnect");
+    const xDisconnect = document.getElementById("xDisconnect");
+    const ttDisconnect = document.getElementById("ttDisconnect");
+    const connBanner = document.getElementById("connBanner");
+    const heatmapWrap = document.getElementById("heatmapWrap");
+    const handleL = document.getElementById("handleL");
+    const handleR = document.getElementById("handleR");
+    const clipControls = document.getElementById("clipControls");
+    const clipStartIn = document.getElementById("clipStartIn");
+    const clipEndIn = document.getElementById("clipEndIn");
+    const usePeak = document.getElementById("usePeak");
+    const generateBtn = document.getElementById("generateBtn");
+    const libraryList = document.getElementById("libraryList");
+    const libraryRefresh = document.getElementById("libraryRefresh");
+
+    let pollTimer = null;
+    let currentJobId = null;
+    let selectedTrack = "none";
+    let calCursor = new Date();
+    let selectedDay = defaultSchedule();
+    let videoDuration = 0;
+    let clipStart = 0;
+    let clipEnd = 30;
+    let suggestedStart = 0;
+    let suggestedEnd = 30;
+    let dragMode = null;
+    let currentLibraryId = null;
+
+    function defaultSchedule() {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(12, 0, 0, 0);
+      return d;
+    }
+
+    function scheduledDate() {
+      const d = new Date(selectedDay);
+      d.setHours(Number(calHour.value) || 0, Number(calMinute.value) || 0, 0, 0);
+      return d;
+    }
+
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function renderCalendar() {
+      const year = calCursor.getFullYear();
+      const month = calCursor.getMonth();
+      calLabel.textContent = calCursor.toLocaleString(undefined, { month: "long", year: "numeric" });
+      const first = new Date(year, month, 1);
+      const start = first.getDay();
+      const days = new Date(year, month + 1, 0).getDate();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let html = "";
+      for (let i = 0; i < start; i++) html += `<span></span>`;
+      for (let day = 1; day <= days; day++) {
+        const date = new Date(year, month, day);
+        const isPast = date < today;
+        const isSel =
+          date.getFullYear() === selectedDay.getFullYear() &&
+          date.getMonth() === selectedDay.getMonth() &&
+          date.getDate() === selectedDay.getDate();
+        let cls = "h-8 text-sm";
+        if (isPast) cls += " text-paper/20";
+        else if (isSel) cls += " bg-acid text-ink";
+        else cls += " hover:bg-paper/10";
+        html += `<button type="button" data-day="${day}" class="${cls}" ${isPast ? "disabled" : ""}>${day}</button>`;
+      }
+      calDays.innerHTML = html;
+      const live = scheduledDate();
+      calSummary.textContent = live.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    calDays.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-day]");
+      if (!btn) return;
+      selectedDay = new Date(calCursor.getFullYear(), calCursor.getMonth(), Number(btn.dataset.day), 12, 0, 0, 0);
+      renderCalendar();
+    });
+    calPrev.addEventListener("click", () => {
+      calCursor.setMonth(calCursor.getMonth() - 1);
+      renderCalendar();
+    });
+    calNext.addEventListener("click", () => {
+      calCursor.setMonth(calCursor.getMonth() + 1);
+      renderCalendar();
+    });
+    calHour.addEventListener("change", renderCalendar);
+    calMinute.addEventListener("change", renderCalendar);
+
+    async function loadTracks() {
+      const res = await fetch("/api/music");
+      const data = await res.json();
+      tracksEl.innerHTML = (data.tracks || []).map((t) => `
+        <button type="button" data-track="${t.id}" class="track-btn border border-paper/20 px-3 py-3 text-left hover:border-acid">
+          <span class="block text-sm font-medium">${t.name}</span>
+          <span class="mt-1 block font-mono text-[11px] text-paper/40">${t.mood}</span>
+        </button>
+      `).join("");
+      markTrack();
+    }
+
+    function markTrack() {
+      tracksEl.querySelectorAll(".track-btn").forEach((btn) => {
+        btn.classList.toggle("border-acid", btn.dataset.track === selectedTrack);
+        btn.classList.toggle("bg-acid/10", btn.dataset.track === selectedTrack);
+      });
+    }
+
+    tracksEl.addEventListener("click", async (event) => {
+      const btn = event.target.closest(".track-btn");
+      if (!btn || !currentJobId) return;
+      const trackId = btn.dataset.track;
+      selectedTrack = trackId;
+      markTrack();
+      if (trackId !== "none") {
+        musicPreview.src = `/api/music/${trackId}/audio`;
+        musicPreview.play().catch(() => {});
+      } else {
+        musicPreview.pause();
+      }
+      musicStatus.textContent = "Mixing into the short…";
+      musicStatus.classList.remove("hidden");
+      const res = await fetch(`/api/jobs/${currentJobId}/music`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_id: trackId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        musicStatus.textContent = data.detail || "Could not mix music.";
+        return;
+      }
+      player.src = `/api/jobs/${currentJobId}/video?t=${Date.now()}`;
+      download.href = player.src;
+      musicStatus.textContent = trackId === "none" ? "Original audio." : "Music mixed. Preview updated.";
+    });
+
+    async function loadCategories() {
+      const res = await fetch("/api/categories");
+      const data = await res.json();
+      metaCat.innerHTML = (data.categories || []).map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+    }
+
+    async function loadMeta() {
+      if (!currentJobId) return;
+      metaSource.textContent = "Writing…";
+      regenMeta.disabled = true;
+      const res = await fetch(`/api/jobs/${currentJobId}/meta`, { method: "POST" });
+      const data = await res.json();
+      regenMeta.disabled = false;
+      if (!res.ok) {
+        metaSource.textContent = data.detail || "Could not write copy.";
+        return;
+      }
+      metaTitle.value = data.title || "";
+      metaDesc.value = data.description || "";
+      metaTags.value = (data.tags || []).join(", ");
+      metaCat.value = data.category_id || "24";
+      metaX.value = data.x_text || "";
+      metaTt.value = data.tiktok_caption || "";
+      if (data.ai) {
+        metaSource.textContent = "From Gemini";
+      } else {
+        metaSource.textContent = data.warning || "Local draft (check GEMINI_API_KEY / model)";
+      }
+    }
+
+    regenMeta.addEventListener("click", loadMeta);
+
+    async function loadConnections() {
+      const res = await fetch("/api/connections");
+      const data = await res.json();
+      const con = data.connections || {};
+      const yt = con.youtube || {};
+      const x = con.x || {};
+      const tt = con.tiktok || {};
+
+      ytStatus.textContent = yt.connected
+        ? "Connected · API ready"
+        : (yt.configured ? "Not connected" : "Add YOUTUBE_CLIENT_ID in .env");
+      ytStatus.className = `mt-3 font-mono text-xs ${yt.connected ? "text-acid" : "text-paper/50"}`;
+      ytConnectTop.classList.toggle("hidden", Boolean(yt.connected) || !yt.configured);
+      ytDisconnect.classList.toggle("hidden", !yt.connected);
+      document.getElementById("platYt").checked = Boolean(yt.connected);
+      document.getElementById("platYt").disabled = !yt.connected;
+
+      xStatus.textContent = x.connected
+        ? "Connected · API ready"
+        : (x.configured ? "Not connected" : "Add X_CLIENT_ID in .env");
+      xStatus.className = `mt-3 font-mono text-xs ${x.connected ? "text-acid" : "text-paper/50"}`;
+      xConnect.classList.toggle("hidden", Boolean(x.connected) || !x.configured);
+      xDisconnect.classList.toggle("hidden", !x.connected);
+      document.getElementById("platX").checked = Boolean(x.connected);
+      document.getElementById("platX").disabled = !x.connected;
+
+      ttStatus.textContent = tt.connected
+        ? (tt.profile?.display_name ? `Connected as ${tt.profile.display_name}` : (tt.label || "Connected · API ready"))
+        : (tt.label || (tt.configured ? "Not connected" : "Add TIKTOK_CLIENT_KEY in .env"));
+      ttStatus.className = `mt-3 font-mono text-xs ${tt.connected ? "text-acid" : "text-paper/50"}`;
+      const ttProfile = document.getElementById("ttProfile");
+      if (ttProfile) {
+        if (tt.connected && tt.profile) {
+          const name = tt.profile.display_name || "TikTok user";
+          const avatar = tt.profile.avatar_url
+            ? `<img src="${tt.profile.avatar_url}" alt="" class="h-8 w-8 object-cover" referrerpolicy="no-referrer" />`
+            : "";
+          ttProfile.innerHTML = `${avatar}<span class="font-mono text-[11px] text-paper/70">${name}</span>`;
+          ttProfile.classList.remove("hidden");
+          ttProfile.classList.add("flex");
+        } else {
+          ttProfile.innerHTML = "";
+          ttProfile.classList.add("hidden");
+          ttProfile.classList.remove("flex");
+        }
+      }
+      const ttCan = Boolean(tt.can_connect) && !tt.connected;
+      ttConnect.classList.toggle("hidden", !ttCan);
+      ttDisconnect.classList.toggle("hidden", !tt.connected);
+      document.getElementById("platTt").checked = Boolean(tt.connected);
+      document.getElementById("platTt").disabled = !tt.connected;
+      let ttHelp = document.getElementById("ttHelp");
+      if (!ttHelp) {
+        ttHelp = document.createElement("p");
+        ttHelp.id = "ttHelp";
+        ttHelp.className = "mt-2 font-mono text-[10px] leading-relaxed text-ember/90";
+        ttConnect.parentElement.appendChild(ttHelp);
+      }
+      if (!tt.connected && (tt.problems || []).length) {
+        ttHelp.innerHTML = (tt.problems || []).map((p) => `• ${p}`).join("<br>")
+          + `<br><a class="text-acid underline" href="/auth/tiktok">Open setup details</a>`;
+        ttHelp.classList.remove("hidden");
+      } else {
+        ttHelp.textContent = "";
+        ttHelp.classList.add("hidden");
+      }
+
+      const ready = [yt.connected && "YouTube", x.connected && "X", tt.connected && "TikTok"].filter(Boolean);
+      connBanner.textContent = ready.length ? `Ready: ${ready.join(" · ")}` : "No accounts ready yet";
+      if (connHint) {
+        connHint.textContent = ready.length
+          ? `Will post via API: ${ready.join(", ")}`
+          : "Connect at least one account above before scheduling.";
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("yt") === "connected") connBanner.textContent = "YouTube connected";
+      if (params.get("yt") === "denied") connBanner.textContent = "YouTube connect cancelled";
+      if (params.get("x") === "connected") connBanner.textContent = "X connected";
+      if (params.get("x") === "denied") connBanner.textContent = "X connect cancelled";
+      if (params.get("tiktok") === "connected") connBanner.textContent = "TikTok connected";
+      if (params.get("tiktok") === "denied") connBanner.textContent = "TikTok connect cancelled";
+    }
+
+    ytDisconnect.addEventListener("click", async () => {
+      await fetch("/api/connections/youtube/disconnect", { method: "POST" }).catch(() => {});
+      loadConnections();
+    });
+    xDisconnect.addEventListener("click", async () => {
+      await fetch("/api/connections/x/disconnect", { method: "POST" }).catch(() => {});
+      loadConnections();
+    });
+    ttDisconnect.addEventListener("click", async () => {
+      ttDisconnect.disabled = true;
+      await fetch("/api/connections/tiktok/disconnect", { method: "POST" }).catch(() => {});
+      ttDisconnect.disabled = false;
+      await loadConnections();
+    });
+    ttConnect.addEventListener("click", async () => {
+      ttConnect.disabled = true;
+      ttConnect.textContent = "Opening TikTok…";
+      try {
+        const res = await fetch("/api/connections/tiktok/connect", { method: "POST" });
+        const data = await res.json();
+        if (data.oauth_url) {
+          window.location.href = data.oauth_url;
+          return;
+        }
+        if (!res.ok) {
+          connBanner.textContent = data.detail || "TikTok connect failed";
+        }
+      } catch (err) {
+        connBanner.textContent = "TikTok connect failed";
+      }
+      ttConnect.disabled = false;
+      ttConnect.textContent = "Connect TikTok";
+      await loadConnections();
+    });
+
+    async function loadQueue() {
+      const res = await fetch("/api/scheduled");
+      const data = await res.json();
+      const items = data.items || [];
+      queueEl.innerHTML = items.length
+        ? items.map((item) => {
+            const when = new Date(item.publish_at).toLocaleString();
+            const plats = (item.platforms || []).join(", ");
+            return `<li class="border border-paper/15 px-3 py-2">${item.metadata?.title || "Untitled"} · ${plats} · ${when} · ${item.status}</li>`;
+          }).join("")
+        : `<li class="text-paper/35">Nothing queued yet.</li>`;
+    }
+
+    scheduleBtn.addEventListener("click", async () => {
+      scheduleBtn.disabled = true;
+      scheduleMsg.classList.add("hidden");
+      const platforms = [];
+      if (document.getElementById("platYt").checked) platforms.push("youtube");
+      if (document.getElementById("platX").checked) platforms.push("x");
+      if (document.getElementById("platTt").checked) platforms.push("tiktok");
+      const payload = {
+        platforms,
+        publish_at: scheduledDate().toISOString(),
+        title: metaTitle.value,
+        description: metaDesc.value,
+        tags: metaTags.value.split(",").map((t) => t.trim()).filter(Boolean),
+        category_id: metaCat.value,
+        x_text: metaX.value,
+        tiktok_caption: metaTt.value,
+      };
+      const url = currentJobId
+        ? `/api/jobs/${currentJobId}/schedule`
+        : (currentLibraryId ? `/api/library/${currentLibraryId}/schedule` : null);
+      if (!url) {
+        scheduleBtn.disabled = false;
+        scheduleMsg.classList.remove("hidden");
+        scheduleMsg.className = "mt-3 font-mono text-sm text-ember";
+        scheduleMsg.textContent = "Open a short first.";
+        return;
+      }
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      scheduleBtn.disabled = false;
+      scheduleMsg.classList.remove("hidden");
+      if (!res.ok) {
+        scheduleMsg.className = "mt-3 font-mono text-sm text-ember";
+        scheduleMsg.textContent = data.detail || "Could not schedule.";
+        return;
+      }
+      scheduleMsg.className = "mt-3 font-mono text-sm text-acid";
+      const when = new Date(data.publish_at).toLocaleString();
+      const parts = [];
+      if (data.results?.youtube?.ok) {
+        parts.push(`YouTube uploaded privately → live ${when}`);
+      } else if (data.results?.youtube?.error) {
+        parts.push(`YouTube: ${data.results.youtube.error}`);
+      }
+      if (data.results?.x?.queued) parts.push(`X queued for ${when}`);
+      if (data.results?.tiktok?.ok) {
+        parts.push(data.results.tiktok.note || "TikTok inbox draft sent — check the TikTok app");
+      } else if (data.results?.tiktok?.error) {
+        parts.push(`TikTok: ${data.results.tiktok.error}`);
+      } else if (data.results?.tiktok?.queued) {
+        parts.push(`TikTok queued for ${when}`);
+      }
+      scheduleMsg.textContent = parts.length ? parts.join(" · ") : `Queued for ${when}.`;
+      loadQueue();
+      loadLibrary();
+    });
+
+    async function showPublish(jobId) {
+      currentJobId = jobId;
+      publish.classList.remove("hidden");
+      selectedDay = defaultSchedule();
+      calCursor = new Date(selectedDay);
+      calHour.value = 12;
+      calMinute.value = 0;
+      renderCalendar();
+      await loadTracks();
+      await loadCategories();
+      await loadMeta();
+      await loadQueue();
+      await loadConnections();
+    }
+
+    function fmt(seconds) {
+      if (seconds == null) return "—";
+      const s = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(s / 60);
+      const r = String(s % 60).padStart(2, "0");
+      return `${m}:${r}`;
+    }
+
+    function renderSteps(status) {
+      const order = STEPS.map(([id]) => id);
+      const idx = order.indexOf(status);
+      const done = status === "done";
+      const failed = status === "error";
+      stepsEl.innerHTML = STEPS.map(([id, label], i) => {
+        let cls = "border border-paper/15 px-2 py-2 text-paper/35";
+        if (failed && (i === idx || idx === -1)) cls = "border border-ember px-2 py-2 text-ember";
+        else if (done || i < idx) cls = "border border-acid/40 bg-acid/10 px-2 py-2 text-acid";
+        else if (i === idx) cls = "border border-acid px-2 py-2 text-paper";
+        return `<li class="${cls}">${label}</li>`;
+      }).join("");
+    }
+
+    function renderHeatmap(job) {
+      const points = job.heatmap || [];
+      videoDuration = job.duration || (points.length ? points[points.length - 1].end : 1);
+      barsEl.innerHTML = points.map((p) => {
+        const h = Math.max(4, Math.round((p.value || 0) * 100));
+        return `<div class="flex-1 bg-paper/70" style="height:${h}%"></div>`;
+      }).join("");
+
+      if (job.clip_start != null) clipStart = job.clip_start;
+      if (job.clip_end != null) clipEnd = job.clip_end;
+      if (job.suggested_start != null) suggestedStart = job.suggested_start;
+      if (job.suggested_end != null) suggestedEnd = job.suggested_end;
+
+      const picking = job.status === "ready";
+      clipControls.classList.toggle("hidden", !picking);
+      updateClipUI();
+    }
+
+    function updateClipUI() {
+      if (!videoDuration) return;
+      clipStart = Math.max(0, Math.min(clipStart, videoDuration - 15));
+      clipEnd = Math.max(clipStart + 15, Math.min(clipEnd, Math.min(videoDuration, clipStart + 60)));
+      const left = (clipStart / videoDuration) * 100;
+      const width = ((clipEnd - clipStart) / videoDuration) * 100;
+      windowEl.style.left = `${left}%`;
+      windowEl.style.width = `${width}%`;
+      windowEl.classList.remove("hidden");
+      handleL.style.left = `${left}%`;
+      handleR.style.left = `${left + width}%`;
+      handleL.classList.remove("hidden");
+      handleR.classList.remove("hidden");
+      rangeEl.textContent = `${fmt(clipStart)} – ${fmt(clipEnd)} · ${Math.round(clipEnd - clipStart)}s`;
+      clipStartIn.value = clipStart.toFixed(1);
+      clipEndIn.value = clipEnd.toFixed(1);
+    }
+
+    function timeFromClientX(clientX) {
+      const rect = heatmapWrap.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      return ratio * videoDuration;
+    }
+
+    function onDrag(clientX) {
+      const t = timeFromClientX(clientX);
+      if (dragMode === "l") {
+        clipStart = Math.min(t, clipEnd - 15);
+      } else if (dragMode === "r") {
+        clipEnd = Math.max(t, clipStart + 15);
+        if (clipEnd - clipStart > 60) clipStart = clipEnd - 60;
+      } else if (dragMode === "move") {
+        const len = clipEnd - clipStart;
+        let mid = t;
+        clipStart = Math.max(0, Math.min(mid - len / 2, videoDuration - len));
+        clipEnd = clipStart + len;
+      }
+      updateClipUI();
+    }
+
+    handleL.addEventListener("pointerdown", (e) => { dragMode = "l"; handleL.setPointerCapture(e.pointerId); e.preventDefault(); });
+    handleR.addEventListener("pointerdown", (e) => { dragMode = "r"; handleR.setPointerCapture(e.pointerId); e.preventDefault(); });
+    windowEl.addEventListener("pointerdown", (e) => { dragMode = "move"; windowEl.setPointerCapture(e.pointerId); e.preventDefault(); });
+    ["pointermove"].forEach((ev) => {
+      heatmapWrap.addEventListener(ev, (e) => { if (dragMode) onDrag(e.clientX); });
+      handleL.addEventListener(ev, (e) => { if (dragMode) onDrag(e.clientX); });
+      handleR.addEventListener(ev, (e) => { if (dragMode) onDrag(e.clientX); });
+      windowEl.addEventListener(ev, (e) => { if (dragMode) onDrag(e.clientX); });
+    });
+    const endDrag = () => { dragMode = null; };
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+
+    clipStartIn.addEventListener("change", () => {
+      clipStart = parseFloat(clipStartIn.value) || 0;
+      updateClipUI();
+    });
+    clipEndIn.addEventListener("change", () => {
+      clipEnd = parseFloat(clipEndIn.value) || clipStart + 15;
+      updateClipUI();
+    });
+    usePeak.addEventListener("click", () => {
+      clipStart = suggestedStart;
+      clipEnd = suggestedEnd;
+      updateClipUI();
+    });
+    generateBtn.addEventListener("click", async () => {
+      if (!currentJobId) {
+        jobError.textContent = "Analyze a video first, then choose a clip.";
+        jobError.classList.remove("hidden");
+        return;
+      }
+      generateBtn.disabled = true;
+      generateBtn.textContent = "Starting…";
+      jobError.classList.add("hidden");
+      try {
+        const res = await fetch(`/api/jobs/${currentJobId}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ start: clipStart, end: clipEnd }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          jobError.textContent = data.detail || "Could not start generate.";
+          jobError.classList.remove("hidden");
+          generateBtn.disabled = false;
+          generateBtn.textContent = "Generate this clip";
+          return;
+        }
+        clipControls.classList.add("hidden");
+        progressEl.textContent = "Starting download…";
+        progressEl.classList.remove("hidden");
+        poll(currentJobId);
+      } catch (err) {
+        jobError.textContent = "Network error starting generate.";
+        jobError.classList.remove("hidden");
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate this clip";
+      }
+    });
+
+    async function loadLibrary() {
+      const res = await fetch("/api/library");
+      const data = await res.json();
+      const items = data.items || [];
+      libraryList.innerHTML = items.length
+        ? items.map((item) => {
+            const when = item.created_at ? new Date(item.created_at).toLocaleString() : "";
+            const meta = item.metadata || {};
+            const caps = (item.captions_text || "").slice(0, 80);
+            return `<li class="border border-paper/15 p-3">
+              <button type="button" data-lib="${item.id}" class="lib-open w-full text-left">
+                <p class="text-sm font-medium">${meta.title || item.title || "Untitled"}</p>
+                <p class="mt-1 font-mono text-[11px] text-paper/40">${when} · ${fmt(item.clip_start)}–${fmt(item.clip_end)}</p>
+                <p class="mt-2 font-mono text-[11px] text-paper/50 line-clamp-2">${caps || meta.tiktok_caption || meta.description || ""}</p>
+              </button>
+              <div class="mt-2 flex gap-2">
+                <a href="/api/library/${item.id}/video" download class="font-mono text-[11px] text-acid underline">Download</a>
+                <button type="button" data-del="${item.id}" class="lib-del font-mono text-[11px] text-ember/80 underline">Delete</button>
+              </div>
+            </li>`;
+          }).join("")
+        : `<li class="font-mono text-sm text-paper/35">No shorts yet. Paste a YouTube URL to create one.</li>`;
+    }
+    libraryRefresh.addEventListener("click", loadLibrary);
+    libraryList.addEventListener("click", async (event) => {
+      const openBtn = event.target.closest(".lib-open");
+      const delBtn = event.target.closest(".lib-del");
+      if (delBtn) {
+        await fetch(`/api/library/${delBtn.dataset.del}`, { method: "DELETE" });
+        loadLibrary();
+        return;
+      }
+      if (!openBtn) return;
+      const id = openBtn.dataset.lib;
+      const res = await fetch(`/api/library/${id}`);
+      const item = await res.json();
+      if (!res.ok) return;
+      currentLibraryId = id;
+      currentJobId = item.job_id || null;
+      work.classList.remove("hidden");
+      publish.classList.remove("hidden");
+      titleEl.textContent = item.title || "Short";
+      player.src = `/api/library/${id}/video?t=${Date.now()}`;
+      download.href = `/api/library/${id}/video`;
+      download.classList.remove("hidden");
+      previewHint.classList.add("hidden");
+      const meta = item.metadata || {};
+      metaTitle.value = meta.title || item.title || "";
+      metaDesc.value = meta.description || "";
+      metaTags.value = (meta.tags || []).join(", ");
+      metaCat.value = meta.category_id || "24";
+      metaX.value = meta.x_text || "";
+      metaTt.value = meta.tiktok_caption || "";
+      metaSource.textContent = "From library";
+      await loadTracks();
+      await loadCategories();
+      await loadQueue();
+      await loadConnections();
+      renderHeatmap({
+        heatmap: [],
+        duration: (item.clip_end || 0) - (item.clip_start || 0) || 1,
+        clip_start: item.clip_start,
+        clip_end: item.clip_end,
+        status: "done",
+      });
+      clipControls.classList.add("hidden");
+    });
+
+    async function poll(jobId) {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      const job = await res.json();
+      if (!res.ok) {
+        jobError.textContent = job.detail || "Job failed.";
+        jobError.classList.remove("hidden");
+        submit.disabled = false;
+        return;
+      }
+      titleEl.textContent = job.title || "Reading video…";
+      renderSteps(job.status === "picking" ? "analyzing" : job.status);
+      renderHeatmap(job);
+      if (job.progress && job.status !== "done" && job.status !== "error" && job.status !== "ready") {
+        progressEl.textContent = job.progress;
+        progressEl.classList.remove("hidden");
+      } else {
+        progressEl.classList.add("hidden");
+      }
+      if (job.warning) {
+        warningEl.textContent = job.warning;
+        warningEl.classList.remove("hidden");
+      }
+      if (job.status === "ready") {
+        submit.disabled = false;
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate this clip";
+        return;
+      }
+      if (job.status === "done") {
+        const src = `/api/jobs/${job.id}/video?t=${Date.now()}`;
+        player.src = src;
+        download.href = src;
+        download.classList.remove("hidden");
+        previewHint.classList.add("hidden");
+        submit.disabled = false;
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate this clip";
+        currentLibraryId = job.library_id || null;
+        showPublish(job.id);
+        loadLibrary();
+        return;
+      }
+      if (job.status === "error") {
+        jobError.textContent = job.error || "Something went wrong.";
+        jobError.classList.remove("hidden");
+        submit.disabled = false;
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate this clip";
+        clipControls.classList.remove("hidden");
+        return;
+      }
+      pollTimer = setTimeout(() => poll(jobId), 1000);
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      formError.classList.add("hidden");
+      jobError.classList.add("hidden");
+      warningEl.classList.add("hidden");
+      download.classList.add("hidden");
+      previewHint.classList.remove("hidden");
+      player.removeAttribute("src");
+      player.load();
+      submit.disabled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      publish.classList.add("hidden");
+      currentJobId = null;
+      selectedTrack = "none";
+
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlInput.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        formError.textContent = typeof data.detail === "string" ? data.detail : "Could not start.";
+        formError.classList.remove("hidden");
+        submit.disabled = false;
+        return;
+      }
+
+      work.classList.remove("hidden");
+      titleEl.textContent = "Starting…";
+      rangeEl.textContent = "";
+      barsEl.innerHTML = "";
+      currentJobId = data.id;
+      renderSteps("analyzing");
+      poll(data.id);
+    });
+
+    loadConnections();
+    loadLibrary();
+  </script>
+</body>
+</html>
