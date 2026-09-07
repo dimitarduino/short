@@ -120,6 +120,10 @@ def _extract_info(url: str, *, download: bool = False) -> dict[str, Any]:
         opts = _ydl_opts(**{k: v for k, v in override.items() if v is not None})
         if override.get("cookiefile") is None and "cookiefile" in override:
             opts.pop("cookiefile", None)
+        # Metadata must not fail just because n-challenge left only storyboards.
+        if not download:
+            opts["skip_download"] = True
+            opts["ignore_no_formats_error"] = True
         try:
             with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=download)
@@ -130,12 +134,53 @@ def _extract_info(url: str, *, download: bool = False) -> dict[str, Any]:
             msg = str(exc).lower()
             if not any(
                 s in msg
-                for s in ("not a bot", "page needs to be reloaded", "sign in")
+                for s in (
+                    "not a bot",
+                    "page needs to be reloaded",
+                    "sign in",
+                    "format is not available",
+                    "only images",
+                )
             ):
                 break
             continue
     assert last_exc is not None
     raise last_exc
+
+
+def _has_real_formats(info: dict[str, Any]) -> bool:
+    for fmt in info.get("formats") or []:
+        ext = (fmt.get("ext") or "").lower()
+        if ext and ext not in {"mhtml", "jpg", "png", "webp"}:
+            if fmt.get("url") or fmt.get("fragments") or fmt.get("manifest_url"):
+                return True
+    return False
+
+
+def _require_js_runtime_or_raise() -> None:
+    """Fail fast with a clear message when Deno/Node22 is missing for www-data."""
+    from shutil import which
+
+    deno = which("deno")
+    node = which("node")
+    node_ok = False
+    if node:
+        import subprocess
+
+        try:
+            out = subprocess.check_output([node, "--version"], text=True, timeout=5).strip()
+            # v22.x.x
+            m = re.match(r"v(\d+)", out)
+            node_ok = bool(m and int(m.group(1)) >= 22)
+        except Exception:
+            node_ok = False
+    if deno or node_ok:
+        return
+    raise YoutubeError(
+        "YouTube downloads need Deno ≥2.3 or Node ≥22 on PATH for the service user "
+        "(Node 20 is not enough). Install Deno to /usr/local/bin/deno, then "
+        "`pip install -U 'yt-dlp[default]'` and restart shorts-gen."
+    )
 
 
 def parse_video_id(url: str) -> str:
@@ -151,13 +196,24 @@ def parse_video_id(url: str) -> str:
 
 
 def fetch_metadata(url: str) -> dict[str, Any]:
+    _require_js_runtime_or_raise()
     try:
         info = _extract_info(url, download=False)
+    except YoutubeError:
+        raise
     except Exception as exc:  # yt-dlp raises many extractor errors
         raise YoutubeError(f"Could not read that video: {_clean_yt_error(exc)}") from exc
 
     if not info:
         raise YoutubeError("Could not read that video.")
+
+    if not _has_real_formats(info):
+        raise YoutubeError(
+            "YouTube returned no playable formats (only storyboards). "
+            "Install Deno ≥2.3 to /usr/local/bin/deno (or Node ≥22), ensure "
+            "`sudo -u www-data which deno` works, run "
+            "`pip install -U 'yt-dlp[default]'`, restart shorts-gen."
+        )
 
     heatmap = normalize_heatmap(info.get("heatmap"))
     return {
@@ -176,6 +232,7 @@ def heatmap_payload(points: list[HeatPoint]) -> list[dict[str, float]]:
 
 
 def download_section(url: str, window: ClipWindow, dest: Path, progress_cb=None) -> Path:
+    _require_js_runtime_or_raise()
     dest.parent.mkdir(parents=True, exist_ok=True)
     output = dest.with_suffix(".mp4")
 
