@@ -4,6 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Heatmap Shorts</title>
+  <script>
+    // Apply theme before paint to avoid flash
+    (function () {
+      try {
+        var pref = localStorage.getItem("shorts-theme") || "system";
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var mode = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.dataset.theme = mode;
+        document.documentElement.dataset.themePref = pref;
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+        document.documentElement.dataset.themePref = "system";
+      }
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -14,11 +29,13 @@
             mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
           },
           colors: {
-            ink: "#171916",
-            page: "#eef2ea",
-            panel: "#f7faf3",
-            acid: "#c2db00",
-            ember: "#e24a12",
+            ink: "rgb(var(--c-ink) / <alpha-value>)",
+            page: "rgb(var(--c-page) / <alpha-value>)",
+            panel: "rgb(var(--c-panel) / <alpha-value>)",
+            acid: "rgb(var(--c-acid) / <alpha-value>)",
+            ember: "rgb(var(--c-ember) / <alpha-value>)",
+            onacid: "rgb(var(--c-onacid) / <alpha-value>)",
+            track: "rgb(var(--c-track) / <alpha-value>)",
           },
         },
       },
@@ -28,13 +45,42 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
+    :root, html[data-theme="light"] {
+      --c-ink: 23 25 22;
+      --c-page: 238 242 234;
+      --c-panel: 247 250 243;
+      --c-acid: 194 219 0;
+      --c-ember: 226 74 18;
+      --c-onacid: 23 25 22;
+      --c-track: 18 17 14;
+      --bg-a: rgba(194, 219, 0, 0.22);
+      --bg-b: rgba(23, 25, 22, 0.06);
+      --bg-grad: linear-gradient(180deg, #f4f7ef 0%, #eef2ea 40%, #e6ebe0 100%);
+    }
+    html[data-theme="dark"] {
+      --c-ink: 243 239 228;
+      --c-page: 18 17 14;
+      --c-panel: 28 27 23;
+      --c-acid: 232 255 71;
+      --c-ember: 255 90 31;
+      --c-onacid: 18 17 14;
+      --c-track: 10 10 8;
+      --bg-a: rgba(232, 255, 71, 0.08);
+      --bg-b: rgba(243, 239, 228, 0.04);
+      --bg-grad: linear-gradient(180deg, #161512 0%, #12110e 45%, #0e0d0b 100%);
+    }
     body {
-      background-color: #eef2ea;
+      background-color: rgb(var(--c-page));
       background-image:
-        radial-gradient(ellipse 80% 50% at 100% -10%, rgba(194, 219, 0, 0.22), transparent 55%),
-        radial-gradient(ellipse 60% 40% at 0% 100%, rgba(23, 25, 22, 0.06), transparent 50%),
-        linear-gradient(180deg, #f4f7ef 0%, #eef2ea 40%, #e6ebe0 100%);
+        radial-gradient(ellipse 80% 50% at 100% -10%, var(--bg-a), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 0% 100%, var(--bg-b), transparent 50%),
+        var(--bg-grad);
       background-attachment: fixed;
+    }
+    .theme-btn[aria-pressed="true"] {
+      background: rgb(var(--c-acid));
+      color: rgb(var(--c-onacid));
+      border-color: rgb(var(--c-acid));
     }
   </style>
 </head>
@@ -46,7 +92,14 @@
         <h1 class="mt-2 text-4xl font-semibold tracking-tight">Heatmap Shorts</h1>
         <p class="mt-2 max-w-xl text-ink/70">Paste a YouTube link. We cut the most replayed stretch, crop it vertical, and burn in captions.</p>
       </div>
-      <p class="hidden font-mono text-xs text-ink/40 sm:block">localhost only</p>
+      <div class="flex flex-col items-end gap-3">
+        <div id="themeSwitch" class="inline-flex border border-ink/15 bg-panel/80 p-0.5 font-mono text-[10px] uppercase tracking-wider" role="group" aria-label="Theme">
+          <button type="button" data-theme-pref="light" class="theme-btn px-2.5 py-1.5 text-ink/55 hover:text-ink" aria-pressed="false">Light</button>
+          <button type="button" data-theme-pref="dark" class="theme-btn px-2.5 py-1.5 text-ink/55 hover:text-ink" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-pref="system" class="theme-btn px-2.5 py-1.5 text-ink/55 hover:text-ink" aria-pressed="false">System</button>
+        </div>
+        <p class="hidden font-mono text-xs text-ink/40 sm:block">localhost only</p>
+      </div>
     </header>
 
     <section id="connections" class="mt-8 border border-ink/10 bg-panel/70 p-5 backdrop-blur-sm">
@@ -62,14 +115,14 @@
           <p class="text-sm font-medium">YouTube</p>
           <p class="mt-1 font-mono text-[11px] text-ink/40">OAuth · private upload → publish later</p>
           <p id="ytStatus" class="mt-3 font-mono text-xs text-ink/50">Checking…</p>
-          <a id="ytConnectTop" href="/auth/youtube" class="mt-3 inline-block bg-acid px-3 py-2 text-xs font-semibold text-ink hover:bg-ink hover:text-page">Connect YouTube</a>
+          <a id="ytConnectTop" href="/auth/youtube" class="mt-3 inline-block bg-acid px-3 py-2 text-xs font-semibold text-onacid hover:bg-ink hover:text-page">Connect YouTube</a>
           <button id="ytDisconnect" type="button" class="mt-3 hidden border border-ink/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
         </div>
         <div class="border border-ink/10 bg-page/60 p-4" data-platform="x">
           <p class="text-sm font-medium">X</p>
           <p class="mt-1 font-mono text-[11px] text-ink/40">OAuth · video post via X API</p>
           <p id="xStatus" class="mt-3 font-mono text-xs text-ink/50">Checking…</p>
-          <a id="xConnect" href="/auth/x" class="mt-3 inline-block bg-ink px-3 py-2 text-xs font-semibold text-page hover:bg-acid hover:text-ink">Connect X</a>
+          <a id="xConnect" href="/auth/x" class="mt-3 inline-block bg-ink px-3 py-2 text-xs font-semibold text-page hover:bg-acid hover:text-onacid">Connect X</a>
           <button id="xDisconnect" type="button" class="mt-3 hidden border border-ink/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
         </div>
         <div class="border border-ink/10 bg-page/60 p-4" data-platform="tiktok">
@@ -77,7 +130,7 @@
           <p class="mt-1 font-mono text-[11px] text-ink/40">OAuth · Content Posting API</p>
           <p id="ttStatus" class="mt-3 font-mono text-xs text-ink/50">Checking…</p>
           <div id="ttProfile" class="mt-2 hidden items-center gap-2"></div>
-          <button id="ttConnect" type="button" class="mt-3 bg-ink px-3 py-2 text-xs font-semibold text-page hover:bg-acid hover:text-ink">Connect TikTok</button>
+          <button id="ttConnect" type="button" class="mt-3 bg-ink px-3 py-2 text-xs font-semibold text-page hover:bg-acid hover:text-onacid">Connect TikTok</button>
           <button id="ttDisconnect" type="button" class="mt-3 hidden border border-ink/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-ember">Disconnect</button>
         </div>
       </div>
@@ -106,7 +159,7 @@
       <button
         id="submit"
         type="submit"
-        class="shrink-0 bg-acid px-6 py-3 font-semibold text-ink hover:bg-ink hover:text-page disabled:cursor-not-allowed disabled:opacity-40"
+        class="shrink-0 bg-acid px-6 py-3 font-semibold text-onacid hover:bg-ink hover:text-page disabled:cursor-not-allowed disabled:opacity-40"
       >
         Generate
       </button>
@@ -128,7 +181,7 @@
             <h2 id="title" class="text-xl font-medium"></h2>
             <p id="range" class="font-mono text-sm text-ink/70"></p>
           </div>
-          <div id="heatmapWrap" class="relative mt-4 h-24 overflow-hidden border border-ink/15 bg-ink select-none touch-none">
+          <div id="heatmapWrap" class="relative mt-4 h-24 overflow-hidden border border-ink/15 bg-track select-none touch-none">
             <div id="bars" class="absolute inset-0 flex items-end gap-px px-1 pointer-events-none"></div>
             <div id="window" class="absolute top-0 hidden h-full border-x-2 border-acid bg-acid/20 cursor-grab"></div>
             <div id="handleL" class="absolute top-0 hidden z-10 h-full w-3 -translate-x-1/2 cursor-ew-resize bg-acid"></div>
@@ -143,7 +196,7 @@
               <input id="clipEndIn" type="number" min="0" step="0.1" class="mt-1 block w-24 border border-ink/20 bg-panel px-2 py-1 font-mono text-sm" />
             </label>
             <button id="usePeak" type="button" class="border border-ink/20 px-3 py-2 font-mono text-xs uppercase tracking-wider hover:border-acid">Use peak</button>
-            <button id="generateBtn" type="button" class="bg-acid px-4 py-2 text-sm font-semibold text-ink hover:bg-ink hover:text-page">Generate this clip</button>
+            <button id="generateBtn" type="button" class="bg-acid px-4 py-2 text-sm font-semibold text-onacid hover:bg-ink hover:text-page">Generate this clip</button>
           </div>
         </div>
         <p id="progress" class="mt-4 hidden font-mono text-sm text-ink/60"></p>
@@ -152,14 +205,14 @@
       </section>
 
       <aside class="flex flex-col items-center">
-        <div class="w-[220px] rounded-[28px] border border-ink/15 bg-ink p-2 shadow-[0_12px_40px_rgba(23,25,22,0.12)]">
+        <div class="w-[220px] rounded-[28px] border border-ink/15 bg-track p-2 shadow-[0_12px_40px_rgba(23,25,22,0.12)]">
           <div class="overflow-hidden rounded-[20px] bg-[#0a0a08]">
             <video id="player" class="aspect-[9/16] w-full bg-black" controls playsinline></video>
           </div>
         </div>
         <a
           id="download"
-          class="mt-4 hidden bg-ink px-5 py-2 text-sm font-semibold text-page hover:bg-acid hover:text-ink"
+          class="mt-4 hidden bg-ink px-5 py-2 text-sm font-semibold text-page hover:bg-acid hover:text-onacid"
           download
         >Download MP4</a>
         <p id="previewHint" class="mt-3 font-mono text-[11px] uppercase tracking-widest text-ink/40">Preview appears when ready</p>
@@ -234,7 +287,7 @@
           </div>
           <p id="connHint" class="mt-2 font-mono text-[11px] text-ink/40"></p>
           <p class="mt-2 font-mono text-[10px] text-ink/35">YouTube uses the calendar time. TikTok inbox uploads immediately (open the TikTok app for the draft). X posts at the scheduled time.</p>
-          <button id="scheduleBtn" type="button" class="mt-5 w-full bg-acid py-3 font-semibold text-ink hover:bg-ink hover:text-page disabled:opacity-40">Schedule via API</button>
+          <button id="scheduleBtn" type="button" class="mt-5 w-full bg-acid py-3 font-semibold text-onacid hover:bg-ink hover:text-page disabled:opacity-40">Schedule via API</button>
           <p id="scheduleMsg" class="mt-3 hidden font-mono text-sm"></p>
         </div>
       </div>
@@ -247,6 +300,42 @@
   </div>
 
   <script>
+    const THEME_KEY = "shorts-theme";
+    const themeSwitch = document.getElementById("themeSwitch");
+
+    function systemIsDark() {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+
+    function resolveTheme(pref) {
+      if (pref === "light" || pref === "dark") return pref;
+      return systemIsDark() ? "dark" : "light";
+    }
+
+    function applyTheme(pref) {
+      const mode = resolveTheme(pref);
+      document.documentElement.dataset.theme = mode;
+      document.documentElement.dataset.themePref = pref;
+      try { localStorage.setItem(THEME_KEY, pref); } catch (_) {}
+      if (themeSwitch) {
+        themeSwitch.querySelectorAll("[data-theme-pref]").forEach((btn) => {
+          const on = btn.dataset.themePref === pref;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      }
+    }
+
+    applyTheme(document.documentElement.dataset.themePref || localStorage.getItem(THEME_KEY) || "system");
+    themeSwitch?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-theme-pref]");
+      if (!btn) return;
+      applyTheme(btn.dataset.themePref);
+    });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      const pref = document.documentElement.dataset.themePref || "system";
+      if (pref === "system") applyTheme("system");
+    });
+
     const STEPS = [
       ["analyzing", "Analyze"],
       ["ready", "Pick clip"],
@@ -366,7 +455,7 @@
           date.getDate() === selectedDay.getDate();
         let cls = "h-8 text-sm";
         if (isPast) cls += " text-ink/20";
-        else if (isSel) cls += " bg-acid text-ink";
+        else if (isSel) cls += " bg-acid text-onacid";
         else cls += " hover:bg-ink/10";
         html += `<button type="button" data-day="${day}" class="${cls}" ${isPast ? "disabled" : ""}>${day}</button>`;
       }
@@ -714,7 +803,7 @@
         let cls = "border border-ink/10 bg-panel/50 px-2 py-2 text-ink/35";
         if (failed && (i === idx || idx < 0)) cls = "border border-ember px-2 py-2 text-ember";
         else if (done || (idx >= 0 && i < idx)) cls = "border border-acid/50 bg-acid/15 px-2 py-2 text-ink";
-        else if (idx >= 0 && i === idx) cls = "border border-acid bg-acid/30 px-2 py-2 font-medium text-ink";
+        else if (idx >= 0 && i === idx) cls = "border border-acid bg-acid/30 px-2 py-2 font-medium text-onacid";
         return `<li class="${cls}">${label}</li>`;
       }).join("");
     }
