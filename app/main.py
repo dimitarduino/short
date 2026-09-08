@@ -159,6 +159,17 @@ def generate_job(job_id: str, body: GenerateBody) -> dict:
     return job.to_dict()
 
 
+@app.post("/api/jobs/cancel")
+def cancel_jobs() -> dict:
+    """Clear stuck in-flight jobs so a new analyze can start."""
+    return store.cancel_busy()
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    return store.cancel_busy(job_id)
+
+
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
     job = store.get(job_id)

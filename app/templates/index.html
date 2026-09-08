@@ -99,6 +99,13 @@
       >
         Generate
       </button>
+      <button
+        id="cancelStuck"
+        type="button"
+        class="shrink-0 border border-paper/25 px-4 py-3 font-mono text-xs uppercase tracking-wider text-paper/70 hover:border-ember hover:text-ember"
+      >
+        Cancel stuck job
+      </button>
     </form>
     <p id="formError" class="mt-3 hidden font-mono text-sm text-ember"></p>
 
@@ -239,6 +246,7 @@
     const form = document.getElementById("form");
     const urlInput = document.getElementById("url");
     const submit = document.getElementById("submit");
+    const cancelStuck = document.getElementById("cancelStuck");
     const formError = document.getElementById("formError");
     const work = document.getElementById("work");
     const stepsEl = document.getElementById("steps");
@@ -966,7 +974,8 @@
       });
       const data = await res.json();
       if (!res.ok) {
-        formError.textContent = typeof data.detail === "string" ? data.detail : "Could not start.";
+        const detail = typeof data.detail === "string" ? data.detail : "Could not start.";
+        formError.textContent = detail;
         formError.classList.remove("hidden");
         submit.disabled = false;
         return;
@@ -979,6 +988,19 @@
       currentJobId = data.id;
       renderSteps("analyzing");
       poll(data.id);
+    });
+
+    cancelStuck.addEventListener("click", async () => {
+      formError.classList.add("hidden");
+      if (pollTimer) clearTimeout(pollTimer);
+      try {
+        await fetch("/api/jobs/cancel", { method: "POST" });
+      } catch (_) { /* ignore */ }
+      submit.disabled = false;
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Generate this clip";
+      formError.textContent = "Cleared stuck job. Paste a URL and Analyze again.";
+      formError.classList.remove("hidden");
     });
 
     loadConnections();
