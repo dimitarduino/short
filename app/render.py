@@ -222,6 +222,6 @@ def _subtitles_filter(captions: Path) -> str:
         return f"ass='{path}'"
     style = (
         "FontName=Arial Black,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-        "BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=140,Bold=1"
+        "BorderStyle=1,Outline=4,Shadow=0,Alignment=5,MarginV=0,Bold=1"
     )
     return f"subtitles='{path}':force_style='{style}'"
