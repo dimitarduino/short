@@ -683,16 +683,27 @@
       return `${m}:${r}`;
     }
 
+    function stepStatus(status) {
+      if (status === "picking") return "analyzing";
+      if (status === "queued") return "downloading";
+      return status;
+    }
+
     function renderSteps(status) {
+      const mapped = stepStatus(status);
       const order = STEPS.map(([id]) => id);
-      const idx = order.indexOf(status);
-      const done = status === "done";
-      const failed = status === "error";
+      let idx = order.indexOf(mapped);
+      // Unknown in-progress status → treat as moving past Pick clip into Download
+      if (idx < 0 && status !== "done" && status !== "error" && status !== "ready") {
+        idx = order.indexOf("downloading");
+      }
+      const done = mapped === "done";
+      const failed = mapped === "error";
       stepsEl.innerHTML = STEPS.map(([id, label], i) => {
         let cls = "border border-paper/15 px-2 py-2 text-paper/35";
-        if (failed && (i === idx || idx === -1)) cls = "border border-ember px-2 py-2 text-ember";
-        else if (done || i < idx) cls = "border border-acid/40 bg-acid/10 px-2 py-2 text-acid";
-        else if (i === idx) cls = "border border-acid px-2 py-2 text-paper";
+        if (failed && (i === idx || idx < 0)) cls = "border border-ember px-2 py-2 text-ember";
+        else if (done || (idx >= 0 && i < idx)) cls = "border border-acid/40 bg-acid/10 px-2 py-2 text-acid";
+        else if (idx >= 0 && i === idx) cls = "border border-acid bg-acid/20 px-2 py-2 text-paper";
         return `<li class="${cls}">${label}</li>`;
       }).join("");
     }
@@ -906,7 +917,7 @@
         return;
       }
       titleEl.textContent = job.title || "Reading video…";
-      renderSteps(job.status === "picking" ? "analyzing" : job.status);
+      renderSteps(job.status);
       renderHeatmap(job);
       if (job.progress && job.status !== "done" && job.status !== "error" && job.status !== "ready") {
         progressEl.textContent = job.progress;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -24,6 +25,19 @@ from app.youtube import (
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data" / "jobs"
+LOG_DIR = ROOT / "data" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger("shorts.jobs")
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(_fmt)
+    logger.addHandler(_sh)
+    _fh = logging.FileHandler(LOG_DIR / "jobs.log", encoding="utf-8")
+    _fh.setFormatter(_fmt)
+    logger.addHandler(_fh)
 
 MIN_CLIP = 15.0
 MAX_CLIP = 60.0
@@ -54,6 +68,7 @@ class Job:
     captions_text: str = ""
     music_id: str = "none"
     progress: str | None = None
+    caption_langs: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     run_token: int = 0
@@ -131,10 +146,10 @@ class JobStore:
             self._reap_stale_unlocked()
             if any(j.id != job_id and j.status in _BUSY for j in self._jobs.values()):
                 raise JobBusyError("Another short is generating. Cancel it first if stuck.")
-            job.status = "queued"
+            job.status = "downloading"
             job.error = None
             job.warning = None
-            job.progress = None
+            job.progress = "Starting download…"
             job.clip_start = start
             job.clip_end = end
             job.output_path = None
@@ -142,6 +157,7 @@ class JobStore:
             job.run_token += 1
             job.updated_at = datetime.now(timezone.utc).isoformat()
             token = job.run_token
+        logger.info("job %s queued for generate token=%s", job_id, token)
 
         thread = threading.Thread(target=self._generate, args=(job_id, token), daemon=True)
         thread.start()
@@ -239,6 +255,9 @@ class JobStore:
                     return
                 window = pick_peak_window(meta["heatmap"], meta["duration"])
                 has_heat = bool(meta["heatmap"])
+                langs = pick_caption_langs(
+                    meta.get("subtitles") or {}, meta.get("automatic_captions") or {}
+                )
                 # Mark ready immediately — do NOT block on caption prefetch (that was
                 # freezing the UI on "peak found" and locking out new jobs).
                 if not self._set(
@@ -249,6 +268,7 @@ class JobStore:
                     clip_end=window.end,
                     suggested_start=window.start,
                     suggested_end=window.end,
+                    caption_langs=langs,
                     progress=None,
                     warning=(
                         None
@@ -257,6 +277,7 @@ class JobStore:
                     ),
                 ):
                     return
+                logger.info("job %s ready clip=%.1f-%.1f heatmap=%s", job_id, window.start, window.end, has_heat)
             except (YoutubeError, NoHeatmapError) as exc:
                 self._set(job_id, expected_token=token, status="error", error=str(exc), progress=None)
             except Exception as exc:
@@ -302,22 +323,46 @@ class JobStore:
             workdir = DATA_DIR / job.id
             workdir.mkdir(parents=True, exist_ok=True)
             window = ClipWindow(start=float(job.clip_start), end=float(job.clip_end))
+            logger.info(
+                "job %s generate start clip=%.1f-%.1f url=%s",
+                job_id,
+                window.start,
+                window.end,
+                job.url,
+            )
             try:
-                meta = fetch_metadata(job.url)
-
+                # Show Download step immediately (status "queued" made all step tabs look dead).
                 if not self._set(
                     job_id,
                     expected_token=token,
                     status="downloading",
+                    progress="Preparing download…",
+                ):
+                    return
+
+                langs = list(job.caption_langs) if job.caption_langs else ["en", "en-US", "en-GB", "en-orig"]
+                # Avoid a second full metadata fetch when analyze already ran.
+                meta = {
+                    "title": job.title,
+                    "id": job.video_id,
+                    "subtitles": {},
+                    "automatic_captions": {},
+                }
+
+                if not self._set(
+                    job_id,
+                    expected_token=token,
                     progress="Downloading the clip from YouTube. Long videos can take a few minutes.",
                 ):
                     return
+                logger.info("job %s downloading…", job_id)
                 raw = download_section(
                     job.url,
                     window,
                     workdir / "clip_raw",
                     progress_cb=lambda msg: self._set(job_id, expected_token=token, progress=msg),
                 )
+                logger.info("job %s downloaded %s", job_id, raw)
                 if not self._set(job_id, expected_token=token, progress="Trimming to exact window…"):
                     return
                 source = trim_to_duration(raw, workdir / "clip.mp4", window.duration)
@@ -328,9 +373,9 @@ class JobStore:
                     job_id, expected_token=token, status="captions", progress="Downloading captions…"
                 ):
                     return
+                logger.info("job %s captions langs=%s", job_id, langs)
                 warning = None
                 srt_path = None
-                langs = pick_caption_langs(meta.get("subtitles") or {}, meta.get("automatic_captions") or {})
                 vtt = download_captions(
                     job.url,
                     workdir,
@@ -353,6 +398,7 @@ class JobStore:
 
                 if not self._set(job_id, expected_token=token, status="rendering", warning=warning):
                     return
+                logger.info("job %s rendering…", job_id)
                 output = render_short(source, workdir / "short.mp4", srt_path)
                 base = workdir / "short_base.mp4"
                 base.write_bytes(output.read_bytes())
@@ -372,6 +418,7 @@ class JobStore:
                     )
                     library_id = saved["id"]
                 except Exception:
+                    logger.exception("job %s library save failed", job_id)
                     library_id = None
 
                 self._set(
@@ -385,9 +432,12 @@ class JobStore:
                     library_id=library_id,
                     progress=None,
                 )
+                logger.info("job %s done library=%s", job_id, library_id)
             except (YoutubeError, NoHeatmapError, RenderError, FileNotFoundError) as exc:
+                logger.error("job %s failed: %s", job_id, exc)
                 self._set(job_id, expected_token=token, status="error", error=str(exc), progress=None)
             except Exception as exc:
+                logger.exception("job %s unexpected error", job_id)
                 self._set(
                     job_id,
                     expected_token=token,
