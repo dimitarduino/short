@@ -26,18 +26,29 @@ from app.youtube import (
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data" / "jobs"
 LOG_DIR = ROOT / "data" / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("shorts.jobs")
-if not logger.handlers:
+
+
+def _ensure_job_logging() -> None:
+    if logger.handlers:
+        return
     logger.setLevel(logging.INFO)
-    _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    _sh = logging.StreamHandler()
-    _sh.setFormatter(_fmt)
-    logger.addHandler(_sh)
-    _fh = logging.FileHandler(LOG_DIR / "jobs.log", encoding="utf-8")
-    _fh.setFormatter(_fmt)
-    logger.addHandler(_fh)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    stream = logging.StreamHandler()
+    stream.setFormatter(fmt)
+    logger.addHandler(stream)
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(LOG_DIR / "jobs.log", encoding="utf-8")
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    except OSError:
+        # www-data may lack write access; journalctl still gets stream logs.
+        logger.warning("Could not write %s — using stderr only", LOG_DIR)
+
+
+_ensure_job_logging()
 
 MIN_CLIP = 15.0
 MAX_CLIP = 60.0
